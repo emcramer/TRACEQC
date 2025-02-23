@@ -1,0 +1,32 @@
+# ignored data files
+*.csv
+*.txt
+*.xlsx
+*.xls
+
+# ignored output files
+# temporary for ignoring extraneous image files
+*.png
+*.pptx
+
+# ignored code files
+align_spheroid/alignment_func.py
+*.m
+align_timepoints_2.py
+align-timepoints.py
+
+# ignored python files
+# temporary for blocking REPLs
+*.ipynb
+*pycache*
+
+# ignored folders
+spheroid_images/*
+output/*
+alignment_results/*
+alignment_output/*
+unrotation_output/*
+*.ipynb_checkpoints/*
+*.DS_Store*
+align_spheroid/.ipynb_checkpoints/
+tests/.ipynb_checkpoints/

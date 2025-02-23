@@ -6,6 +6,160 @@ from matplotlib.patches import Circle
 import string
 from scipy.spatial.distance import cdist
 
+class CellSimulator:
+    def __init__(self, n_circles=6, width=1000, height=1000, min_radius=35, 
+                 max_radius=50, min_distance=50, rng=None):
+        """Simulates movement of cells represented as circles.
+
+        Args:
+            n_circles (int): Number of cells to simulate.
+            width (int): Width of the simulation space.
+            height (int): Height of the simulation space.
+            min_radius (int): Minimum cell radius.
+            max_radius (int): Maximum cell radius.
+            min_distance (int): Minimum distance between cells.
+            rng (np.random.Generator): Random number generator.
+        """
+        self.n_circles = n_circles
+        self.width = width
+        self.height = height
+        self.min_radius = min_radius
+        self.max_radius = max_radius
+        self.min_distance = min_distance
+        self.rng = rng if rng is not None else np.random.default_rng() #added for reproducibility
+        self.labels = list(string.ascii_lowercase)[:self.n_circles] #initialize labels
+        self.circles_df = self._generate_initial_circles()
+        
+        if self.circles_df is None:
+            raise ValueError("Failed to generate initial cell positions.")
+            
+    def _generate_initial_circles(self):
+         """Generates initial non-overlapping circles using Bridson's algorithm."""
+         # Poisson-disc sampling using Bridson's algorithm could ensure an efficient no-overlap. 
+         # This is more efficient if you require a more dense arrangement while avoiding overlap.
+         # Look into a Bridson algorithm package if you want this level of density.
+         # Otherwise, the updated code is sufficient.
+         radii = self.rng.integers(self.min_radius, self.max_radius, endpoint=True, size=self.n_circles)
+         circles_data = []
+         for r in radii:
+             attempts = 0
+             max_attempts = 1000  # Adjust as needed
+             while attempts < max_attempts:
+                 x = self.rng.uniform(r + self.min_distance, self.width - r - self.min_distance)
+                 y = self.rng.uniform(r + self.min_distance, self.height - r - self.min_distance)
+                 if all(np.sqrt((x - c['x'])**2 + (y - c['y'])**2) >= r + c['radius'] + self.min_distance for c in circles_data):
+                     circles_data.append({'x': x, 'y': y, 'radius': r})
+                     break
+                 attempts += 1
+             else:
+                 # Properly handle failure to place after max_attempts:
+                 raise ValueError("Failed to place all cells without overlaps.")
+
+         circles_df = pd.DataFrame(circles_data)
+         circles_df.insert(0, 'label', self.labels)  # labels created only once
+         return circles_df
+
+    def rotate(self, angle_degrees, center_x=None, center_y=None):
+        """Rotates all cells by a given angle."""
+        if center_x is None:
+            center_x = self.width / 2
+        if center_y is None:
+            center_y = self.height / 2
+        angle_rad = np.deg2rad(angle_degrees)
+        self.circles_df[['x', 'y']] = self.circles_df.apply(
+            lambda row: pd.Series(rotate_point(row['x'], row['y'], angle_rad, center_x, center_y)), axis=1
+        )
+
+
+    def translate(self, max_translate_x, max_translate_y):
+        """Translates all cells randomly within given bounds."""
+
+        tx = self.rng.integers(-max_translate_x, max_translate_x, endpoint=True, size=self.n_circles)
+        ty = self.rng.integers(-max_translate_y, max_translate_y, endpoint=True, size=self.n_circles)
+
+        self.circles_df['x'] += tx
+        self.circles_df['y'] += ty
+
+    def move_individual_cells(self, movement_specs, use_radius_percentage=True):
+        """Moves specified individual cells.
+
+        Args:
+            movement_specs (dict): Dictionary where keys are cell labels and values 
+                                   are movement distances (absolute or percentage).
+            use_radius_percentage (bool): If True, movement is a percentage of radius, 
+                                        otherwise it's a percentage of distance to next cell.
+        """
+
+        for label, movement_percentage in movement_specs.items():
+            try:
+                row_index = self.circles_df.index[self.circles_df['label'] == label][0] #get row index
+            except IndexError:
+                print(f"Warning: Cell with label '{label}' not found, skipping.")
+                continue
+            
+            if use_radius_percentage:
+                radius = self.circles_df.loc[row_index, 'radius']
+                movement_amount = movement_percentage * radius
+            else:
+                # Calculate movement based on distance to the next cell
+                current_index = self.circles_df.index.get_loc(self.circles_df[self.circles_df.label == label].index[0])
+                next_index = (current_index + 1) % len(self.circles_df)
+                next_cell = self.circles_df.iloc[next_index]
+                distance_to_next = np.sqrt((self.circles_df.loc[row_index, 'x'] - next_cell['x'])**2 + (self.circles_df.loc[row_index, 'y'] - next_cell['y'])**2)
+                movement_amount = movement_percentage * distance_to_next
+
+            # Apply random direction
+            angle = self.rng.uniform(0, 2 * np.pi) #random direction
+            dx = movement_amount * np.cos(angle) #x movement
+            dy = movement_amount * np.sin(angle) #y movement
+            self.circles_df.loc[row_index, 'x'] += dx
+            self.circles_df.loc[row_index, 'y'] += dy
+
+
+    def simulate(self, time_points, rotations=None, translations=None, individual_movements=None, use_radius_percentage=True):
+        """Simulates cell movement over multiple time points.
+
+
+        Args:
+            time_points (list): List of time point labels (e.g., ['0h', '24h']).
+            rotations (list): List of rotation angles in degrees for each time point (after the first).
+            translations (list): List of (max_translate_x, max_translate_y) tuples for each time point (after the first).
+            individual_movements (list):  List of dictionaries specifying individual cell movements for each time point (after the first).
+            use_radius_percentage (bool): If True, movement is a percentage of radius, 
+                                        otherwise it's a percentage of distance to next cell.
+
+        Returns:
+            pandas.DataFrame: DataFrame containing cell positions at each time point.
+
+        """
+
+        if rotations is not None and len(rotations) != len(time_points) -1:
+            raise ValueError("Number of rotations must be one less than the number of time points.")
+        if translations is not None and len(translations) != len(time_points) -1:
+            raise ValueError("Number of translations must be one less than the number of time points.")
+        if individual_movements is not None and len(individual_movements) != len(time_points) -1:
+            raise ValueError("Number of individual_movements must be one less than the number of time points.")
+
+        # Initialize results DataFrame
+        all_data = {'label': self.circles_df['label'].tolist(), f'x_{time_points[0]}': self.circles_df['x'], f'y_{time_points[0]}': self.circles_df['y']} #added label for use in downstream matching, since indices might get shuffled
+        
+        for i, time in enumerate(time_points[1:]):
+            # Key Change: Call rotate and translate on the simulator object
+            if rotations is not None:
+                self.rotate(rotations[i])  # Use self.rotate
+
+            if translations is not None:
+                self.translate(*translations[i])  # Use self.translate
+
+            if individual_movements is not None: #check if this parameter was provided
+                self.move_individual_cells(individual_movements[i], use_radius_percentage=use_radius_percentage)
+
+            all_data[f'x_{time}'] = self.circles_df['x'] #access from self.circles_df since rotate modifies this in place
+            all_data[f'y_{time}'] = self.circles_df['y']
+            all_data[f'label_{time}'] = self.circles_df['label']
+
+        return pd.DataFrame(all_data)
+
 def generate_initial_circles(
     n = 6,
     width = 500, 
