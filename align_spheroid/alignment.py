@@ -54,7 +54,6 @@ def align2d(dataX, dataY, well_id, well_name, **kwargs):
 
     well_name : str
         Name or identifier of the well, used for labeling plots.
-blob:vscode-webview://0ogvi7tud9mte63pu58mm901lnkack6047f8g0iu1r99u0g21qoq/efb87888-6e68-478c-9510-1defd3487d36
     Returns:
     --------
     reg_dataX : list
