@@ -17,13 +17,17 @@ class Aligner2D:
 
         Args:
             well_name (str): Name or identifier of the well (for plotting and saving).
-            time_points (list): List of labels representing time points. Default is range(number of time points)
+            time_points (list, optional): List of labels representing time points. If None, it defaults to a range.
         """
         self.well_name = well_name
         self.time_points = time_points
-        self.aligned_points = None  # Stores aligned points
-        self.best_orders = None    # Stores best permutation orders
-        self.errors = None        # Stores alignment errors for each time point
+        self.aligned_points = None
+        self.best_orders = None
+        self.errors = None
+        self.registered_df = None
+        self.centeredA = None
+        self.centeredB = []
+
 
     def _center_points(self, points):
         """Centers a set of 2D points around the origin (0, 0)."""
@@ -49,52 +53,83 @@ class Aligner2D:
                 min_error = error
                 best_order = perm
         return best_order, min_error
-
+    
     def _procrustes_align(self, pointsA, pointsB):
         """Performs Procrustes alignment, handling 1D point arrays."""
+
+        # check dimensionality to make sure a and b match and algorithm can proceed
         if pointsA.ndim == 1:
-            pointsA = pointsA.reshape(-1, 1)  # Reshape to column vector
+            pointsA = pointsA.reshape(-1, 1)
         if pointsB.ndim == 1:
             pointsB = pointsB.reshape(-1, 1)
 
         centroidA = np.mean(pointsA, axis=0)
         centroidB = np.mean(pointsB, axis=0)
+
         centeredA = pointsA - centroidA
         centeredB = pointsB - centroidB
 
-        if centeredA.shape[1] == 1 or centeredB.shape[0] == 1:
+        # store the centered points
+        self.centeredA = centeredA
+        self.centeredB.append(centeredB)
+
+        #return pointsA, np.eye(pointsA.shape[1]), np.zeros_like(centroidA) #identity
+
+        if centeredA.shape[1] == 1 or centeredB.shape[0] == 1: #updated to check for 1 point AFTER centering
             return pointsA, np.eye(2), centroidA - centroidB # return a workable transform if dimensions mismatch for 1 point
 
-        H = centeredB.T @ centeredA
-        U, _, Vt = svd(H)  # No need for .conj().T with SVD
-        R = Vt.T @ U.T
+        # Compute optimal rotation using SVD
+        H = centeredB.conj().T @ centeredA # updated procrustes, no conjugation
+        U, S, Vt = svd(H)  #
+        V = Vt.T.conj()
+        R = V @ U.conj().T
 
+        # Ensure the rotation matrix is proper
         if np.linalg.det(R) < 0:
-            Vt[-1, :] *= -1
-            R = Vt.T @ U.T
-
-        t = centroidA - centroidB @ R
-        aligned_pointsB = (pointsB @ R) + t
-
+            V[:, -1] = -V[:, -1]
+            R = V @ U.conj().T
+            
+        # Apply rotation to translation
+        t = centroidA - (centroidB @ R) #updated translation
+        aligned_pointsB = (pointsB @ R.conj().T) + t #apply transformation as before
         return aligned_pointsB, R, t
 
-    def align(self, dataX, dataY, well_id, **kwargs):
+    def align(self, dataX, dataY, **kwargs):
         """
         Aligns points over time relative to the first time point.
+
+        Args:
+            dataX (numpy.ndarray): 2D array of x-coordinates. Shape (n_timepoints, n_points).
+            dataY (numpy.ndarray): 2D array of y-coordinates. Shape (n_timepoints, n_points).
+
+        Returns:
+            self: Returns the Aligner2D instance for method chaining.
         """
-        data_0 = np.vstack((dataX[well_id, 0], dataY[well_id, 0])).T
+
+        if dataX.shape != dataY.shape:
+            raise ValueError("dataX and dataY must have the same shape.")
+
+        # Determine the number of points and time points from the input data
+        n_timepoints, n_points = dataX.shape
+
+        data_0 = np.vstack((dataX[0, :], dataY[0, :])).T #updated
         data_0 = self._center_points(data_0)
 
-        self.aligned_points = [data_0] # initialize aligned points with the first timepoint
-        self.best_orders = [] # best order at each timepoint
-        self.errors = []  # Alignment errors for each time point
-        all_registered_data = [] # for building pandas dataframe
+        self.aligned_points = [data_0]
+        self.best_orders = []
+        self.errors = []
+        all_registered_data = []
+        self.unaligned_points = []  # Store unaligned, centered points
 
-        time_points = kwargs.get("time_points", list(range(dataX.shape[1])))
+        # Use provided time points or generate a range of indices if none are given
+        time_points = self.time_points if self.time_points is not None else list(range(n_timepoints))
+        self.time_points = time_points #update time points
 
-        for j in range(1, dataX.shape[1]): 
-            data_k = np.vstack((dataX[well_id, j], dataY[well_id, j])).T
+        for j in range(1, n_timepoints):
+            data_k = np.vstack((dataX[j, :], dataY[j, :])).T #updated
             data_k = self._center_points(data_k)
+            centered_data_k = self._center_points(data_k)  # Center before permutation
+            self.unaligned_points.append(centered_data_k)
 
             pointsA = data_0.astype(np.float64)
             pointsB = data_k.astype(np.float64)
@@ -102,65 +137,107 @@ class Aligner2D:
             best_order, min_error = self._find_best_permutation(pointsA, pointsB)
             self.best_orders.append(best_order)
             self.errors.append(min_error)
-            ordered_pointsB = pointsB[best_order]
+            ordered_pointsB = pointsB[best_order, :]
 
             aligned_pointsB, rotation_matrix, translation_vector = self._procrustes_align(pointsA, ordered_pointsB)
             self.aligned_points.append(aligned_pointsB)
 
             for raw_x, raw_y, reg_x, reg_y in zip(
-                dataX[well_id, j], dataY[well_id, j], aligned_pointsB[:, 0], aligned_pointsB[:, 1]
+                dataX[j, :], dataY[j, :], aligned_pointsB[:, 0], aligned_pointsB[:, 1] #updated indexing
             ):
                 all_registered_data.append(
                     {
-                        'raw_x': raw_x, 
-                        'raw_y': raw_y, 
-                        'registered_x': reg_x, 
-                        'registered_y': reg_y, 
-                        'timepoint': time_points[j]
+                        'raw_x': raw_x,
+                        'raw_y': raw_y,
+                        'registered_x': reg_x,
+                        'registered_y': reg_y,
+                        'timepoint': time_points[j],  # Use the correct time point label
                     }
                 )
 
-        self.registered_df = pd.DataFrame(all_registered_data) #added dataframe property
-        
-        if kwargs.get('plot', False):
-            self.plot(**kwargs) #call plotting function if needed
+        self.aligned_points_df = pd.concat([pd.DataFrame(arr, columns = ['x', 'y']) for arr in self.aligned_points])
+        self.registered_df = pd.DataFrame(all_registered_data)
+        return self  # Return self for method chaining
 
-        return self
+    def plot(
+        self, 
+        fig=None, 
+        axs=None, 
+        title_legend=None, 
+        marker_shape=None, 
+        marker_colors=None, 
+        save=False, 
+        save_dir=None, 
+        show_plot=True, 
+        **kwargs
+    ):
+        """Plots the aligned data. If fig and axs are provided they must have the correct number of rows and columns for the number of timepoints.
+        Otherwise, an error will be raised and no plots will be created.
 
-    def plot(self, fig=None, axs=None, title_legend=None, marker_shape=None, marker_colors=None, save=False, save_dir=None, show_plot=True, **kwargs):
-        """Plots the aligned data."""
+        Args:
+            fig (matplotlib.figure.Figure, optional): Matplotlib figure. Defaults to None.
+            axs (numpy.ndarray of matplotlib.axes.Axes, optional): Array of Matplotlib axes, expects a 2 x (len(self.aligned_points) - 1) array of axes. Defaults to None.
+            title_legend (list of str, optional): Legend titles for each time point. Defaults to self.time_points if available, otherwise creates defaults.
+            marker_shape (list, optional): List of marker shapes. Defaults to default markers.
+            marker_colors (list, optional): List of marker colors. Defaults to default colors.
+            save (bool, optional): If True, saves the plot. Defaults to False.
+            save_dir (str, optional): Directory to save the plot. Defaults to "alignment_output".
+            show_plot (bool, optional): If True, shows the plot. Defaults to True.
+        """
+
         if title_legend is None:
-            title_legend = self.time_points
-        n_cols = len(title_legend) -1
-        if n_cols == 0: #if only one time point exists, then just plot the initial points and the aligned points using a single subplot.
-            fig, axs = plt.subplots(1, 1, figsize = (6,3)) #create a single subplot if there are no other time points other than the initial one.
-            pointsA = self.aligned_points[0] #always relative to the first timepoint
-            pointsB = self.aligned_points[1] if len(self.aligned_points) > 1 else None
+            if self.time_points is not None:
+                title_legend = self.time_points
+            else:
+                title_legend = [f"Time {i+1}" for i in range(len(self.aligned_points) - 1)]
+        n_cols = len(title_legend) - 1  # Adjust n_cols for plotting
+
+        # Case where dataX and dataY have the same shape for all time points (no change occurs during alignment).
+
+        if n_cols == 0:
+            if (fig is not None) and (axs is not None):
+                if not isinstance(axs, np.ndarray): # check if axs is an array
+                    axs = np.array([axs]) #make it into a numpy array so we can index correctly.
+                # Check dimensions of fig and axs here and raise ValueError if they don't match. For now, we are expecting a single axis
+                if axs.size != 1:
+                    raise ValueError(f"axs must be a single axis for one time point. Got an array of shape {axs.shape}")
+            else:
+                fig, axs = plt.subplots(1, 1, figsize=(6, 3))  # Create a single subplot if only one time point besides initial
+
+            # Initialize aligned_points with data_0
+            pointsA = self.aligned_points[0] #first timepoint
+            pointsB = self.aligned_points[1] if len(self.aligned_points) > 1 else None # second timepoint, or None if it doesn't exist
+
             if pointsB is not None:
                 axs.scatter(pointsA[:, 0], pointsA[:, 1], marker='o', c='blue', label='Initial Points')
                 axs.scatter(pointsB[:, 0], pointsB[:, 1], marker='x', c='red', label='Aligned Points')
                 axs.set_xticks([])
                 axs.set_yticks([])
                 axs.legend(loc='best')
-                fig.suptitle(f'{self.well_name}: Aligned Point Sets', fontsize=14)  # Updated suptitle
+                fig.suptitle(f'{self.well_name}: Aligned Point Sets', fontsize=14)
                 plt.tight_layout()
-            else:
+
+            else: # if no data exists at time point 1
                 axs.scatter(pointsA[:, 0], pointsA[:, 1], marker='o', c='blue', label='Initial Points')
                 axs.set_xticks([])
                 axs.set_yticks([])
                 axs.legend(loc='best')
-                fig.suptitle(f'{self.well_name}: Aligned Point Sets', fontsize=14)  # Updated suptitle
+                fig.suptitle(f'{self.well_name}: Aligned Point Sets', fontsize=14)
                 plt.tight_layout()
 
-            #fig, axs = plt.subplots(2, len(self.aligned_points) - 1, figsize=(12, 6))
+        elif (fig is not None) and (axs is not None):
+            # Check dimensions of provided fig and axs and raise error if needed
+            expected_shape = (2, n_cols)
+            if axs.ndim == 1 and n_cols == 1:
+                axs = axs.reshape(2, 1)
+            elif axs.shape != expected_shape:
+                raise ValueError(f"axs must have shape {expected_shape} for {n_cols+1} time points. Got {axs.shape}")
+            # Proceed with plotting as before if axs size checks out
 
-        elif (fig is not None) and (axs is not None): #check if axes and figures are provided
-            fig = fig
-            axs = axs
-
-        # handle the case where the correct number of time points is provided.
-        else:  
-            fig, axs = plt.subplots(2, len(self.aligned_points) - 1, figsize=(12, 6))
+        else: # create subplots if figures and axes weren't provided.
+            fig, axs = plt.subplots(2, n_cols, figsize=(3*n_cols, 6))
+            if axs.ndim == 1 and n_cols == 1:
+                axs = axs.reshape(2, 1)
 
         if marker_shape is None:
             marker_shape = ['o', '^', 's', 'd', '*'] 
@@ -169,28 +246,59 @@ class Aligner2D:
         if title_legend is None:
             title_legend = [f"Time {i+1}" for i in range(len(self.aligned_points) - 1)] #adjust the title legend
 
-        # Main plotting loop (now using aligned_points list directly)
+        # Collect legend handles and labels for the entire figure
+        legend_handles = []
+        legend_labels = []
+
+        # Main plotting loop 
         for j in range(len(self.aligned_points) - 1):
             pointsA = self.aligned_points[0] #always relative to the first timepoint
             pointsB = self.aligned_points[j+1]
+            pointsB_unaligned = self.unaligned_points[j] #access unaligned points for plotting.
 
-            # Plotting logic (similar to your original code) –– updated axs[0, j-1] --> axs[0, j]
+            # Plot with labels for the combined legend (but not displayed on subplots):
+            label0 = title_legend[0] if j == 0 else "" #only add pointsA label for the first time point
+            label_unaligned = f'Points B (Time {title_legend[j + 1]})' if j == 0 else "" #only add for first time point
+            label_aligned = f'Aligned Points B (Time {title_legend[j+1]})' if j == 0 else ""
+
+            # Plotting logic 
             axs[0, j].scatter(pointsA[:, 0], pointsA[:, 1], marker=marker_shape[0], c=marker_colors[0], label='Points A (Original Polygon)')
-            axs[0, j].scatter(pointsB[:, 0], pointsB[:, 1], marker=marker_shape[j+1], c=marker_colors[j+1], label=f'Points B (Time {j+1})')
+            axs[0, j].scatter(pointsB_unaligned[:, 0], pointsB_unaligned[:, 1], marker=marker_shape[j + 1], c=marker_colors[j + 1], label=f'Points B (Time {j + 1})') # plot unaligned points
             axs[0, j].set_xticks([]) # updated from axs[0, j-1].set_xticks([])
             axs[0, j].set_yticks([])  # updated from axs[0, j-1].set_yticks([])
-            axs[0, j].set_title(title_legend[j], fontsize=10) #adjust title
-            axs[0, j].legend(loc='best', fontsize=6) #add legend for each subplot
+            axs[0, j].set_title(title_legend[j+1], fontsize=10) #adjust title
+            axs[0, j].legend(loc='best', **kwargs) #add legend for each subplot
 
-            axs[1, j].scatter(pointsA[:, 0], pointsA[:, 1], marker=marker_shape[0], c=marker_colors[0], label='Points A (Original Polygon)')
+            axs[1, j].scatter(pointsA[:, 0], pointsA[:, 1], marker=marker_shape[0], c=marker_colors[0], s=10, alpha=0.7, label='Points A (Original Polygon)')
             axs[1, j].scatter(pointsB[:, 0], pointsB[:, 1], marker=marker_shape[j+1], c=marker_colors[j+1], label=f'Aligned Points B (Time {j+1})')
-            axs[1, j].plot(np.append(pointsA[:, 0], pointsA[0, 0]), np.append(pointsA[:, 1], pointsA[0, 1]), marker_colors[0], linewidth=2.0, alpha=0.6)
+            axs[1, j].plot(np.append(pointsA[:, 0], pointsA[0, 0]), np.append(pointsA[:, 1], pointsA[0, 1]), marker_colors[0], linewidth=3.0, alpha=0.6)
             axs[1, j].plot(np.append(pointsB[:, 0], pointsB[0, 0]), np.append(pointsB[:, 1], pointsB[0, 1]), marker_colors[j+1], alpha=1.0, linewidth=1.0)
             axs[1, j].set_xticks([])
             axs[1, j].set_yticks([])
-            axs[1, j].legend(loc='best', fontsize=6) #add legend for each subplot
+            axs[1, j].legend(loc='best', **kwargs) #add legend for each subplot
 
-        fig.suptitle(f'{self.well_name}: Aligned Point Sets', fontsize=14) #updated suptitle
+        # Get handles and labels *outside* loop ONCE after plotting all time points
+        handles, labels = axs[0, 0].get_legend_handles_labels()  # Get from the first subplot
+        legend_handles.extend(handles)
+        legend_labels.extend(labels)
+        
+        for jj in range(n_cols): #for each time point after the first one, add the labels for the aligned points. These should all be unique and have unique handles
+            handles_aligned, labels_aligned = axs[1, jj].get_legend_handles_labels()
+            legend_handles.append(handles_aligned[1]) # index 1 has the aligned points. index 0 is redundant.
+            legend_labels.append(labels_aligned[1])
+
+        # adding labels to each of the rows in the figure
+        axs[0, 0].set_ylabel('Centered Points', **kwargs)
+        axs[1, 0].set_ylabel('Aligned Geometry', **kwargs)
+
+        # Create a single legend for the entire figure
+        ncol = kwargs.get('ncol', 1)
+        fig.legend(legend_handles, title_legend, loc='lower center', ncol=min(len(legend_labels), 8), bbox_to_anchor=(0.5,-0.1)) 
+
+        # remove the individual subplot legends
+        [ax.get_legend().remove() for ax in axs.ravel()]
+        
+        fig.suptitle(f'{self.well_name}: Aligned Point Sets', **kwargs) #updated suptitle
         plt.tight_layout()
         if save:
             save_dir = save_dir or 'alignment_output'

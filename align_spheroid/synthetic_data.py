@@ -71,14 +71,25 @@ class CellSimulator:
         )
 
 
-    def translate(self, max_translate_x, max_translate_y):
-        """Translates all cells randomly within given bounds."""
+    def translate(self, tx=0, ty=0): 
+        """Translates all cells by a fixed x and y amount.
 
-        tx = self.rng.integers(-max_translate_x, max_translate_x, endpoint=True, size=self.n_circles)
-        ty = self.rng.integers(-max_translate_y, max_translate_y, endpoint=True, size=self.n_circles)
+        Args:
+            tx (int or float, optional): Translation in x direction. Defaults to 0.
+            ty (int or float, optional): Translation in y direction. Defaults to 0.
+        """
 
-        self.circles_df['x'] += tx
+        self.circles_df['x'] += tx 
         self.circles_df['y'] += ty
+
+    def jitter(self, max_jitter_x, max_jitter_y): # jitter method to randomly move cells by random amounts.
+        """Jitters (randomly translates) all cells within given bounds."""
+
+        jx = self.rng.integers(-max_jitter_x, max_jitter_x, endpoint=True, size=self.n_circles) 
+        jy = self.rng.integers(-max_jitter_y, max_jitter_y, endpoint=True, size=self.n_circles)
+
+        self.circles_df['x'] += jx
+        self.circles_df['y'] += jy
 
     def move_individual_cells(self, movement_specs, use_radius_percentage=True):
         """Moves specified individual cells.
@@ -115,8 +126,21 @@ class CellSimulator:
             self.circles_df.loc[row_index, 'x'] += dx
             self.circles_df.loc[row_index, 'y'] += dy
 
+    def _permute_rows(self, df):
+        """ Shuffles the rows in a pandas dataframe. """
+        df_shuffled = df.sample(frac=1).reset_index(drop=True) 
+        return df_shuffled
 
-    def simulate(self, time_points, rotations=None, translations=None, individual_movements=None, use_radius_percentage=True):
+    def simulate(
+        self, 
+        time_points, 
+        rotations=None, 
+        translations=None, 
+        jitters=None,
+        individual_movements=None, 
+        use_radius_percentage=True,
+        shuffle_points=True
+    ):
         """Simulates cell movement over multiple time points.
 
 
@@ -141,7 +165,7 @@ class CellSimulator:
             raise ValueError("Number of individual_movements must be one less than the number of time points.")
 
         # Initialize results DataFrame
-        all_data = {'label': self.circles_df['label'].tolist(), f'x_{time_points[0]}': self.circles_df['x'], f'y_{time_points[0]}': self.circles_df['y']} #added label for use in downstream matching, since indices might get shuffled
+        all_data = [pd.DataFrame({'label': self.circles_df['label'].tolist(), f'x_{time_points[0]}': self.circles_df['x'], f'y_{time_points[0]}': self.circles_df['y']})] #added label for use in downstream matching, since indices might get shuffled
         
         for i, time in enumerate(time_points[1:]):
             # Key Change: Call rotate and translate on the simulator object
@@ -154,11 +178,33 @@ class CellSimulator:
             if individual_movements is not None: #check if this parameter was provided
                 self.move_individual_cells(individual_movements[i], use_radius_percentage=use_radius_percentage)
 
-            all_data[f'x_{time}'] = self.circles_df['x'] #access from self.circles_df since rotate modifies this in place
-            all_data[f'y_{time}'] = self.circles_df['y']
-            all_data[f'label_{time}'] = self.circles_df['label']
+            if jitters is not None: #apply jitter
+                self.jitter(*jitters[i]) #use the jitter method
 
-        return pd.DataFrame(all_data)
+            tp_df = pd.DataFrame({
+                        f'label_{time}': self.circles_df['label'],
+                        f'x_{time}': self.circles_df['x'],
+                        f'y_{time}': self.circles_df['y']
+                    })
+            
+            # shuffle the rows of the data analogous to recording data points out of order
+            if shuffle_points:
+                tp_df = self._permute_rows(tp_df)
+                
+            all_data.append(tp_df)
+
+            #all_data[f'x_{time}'] = self.circles_df['x'] #access from self.circles_df since rotate modifies this in place
+            #all_data[f'y_{time}'] = self.circles_df['y']
+            #all_data[f'label_{time}'] = self.circles_df['label']
+
+        simulated_data = pd.concat(all_data, axis=1)
+            
+        self.simulated_data = simulated_data
+        return simulated_data
+
+
+
+##########
 
 def generate_initial_circles(
     n = 6,
