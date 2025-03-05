@@ -94,7 +94,7 @@ class Aligner2D:
         aligned_pointsB = (pointsB @ R.conj().T) + t #apply transformation as before
         return aligned_pointsB, R, t
 
-    def align(self, dataX, dataY, **kwargs):
+    def align(self, dataX, dataY, labels_0=None, **kwargs):
         """
         Aligns points over time relative to the first time point.
 
@@ -125,6 +125,11 @@ class Aligner2D:
         time_points = self.time_points if self.time_points is not None else list(range(n_timepoints))
         self.time_points = time_points #update time points
 
+        if labels_0 is not None:  # If labels are provided (simulated data), store them
+            self.labels = labels_0 #store initial labels
+        else: #make generic labels for real data case.
+            self.labels = [f'Point_{i}' for i in range(dataX.shape[1])]
+
         for j in range(1, n_timepoints):
             data_k = np.vstack((dataX[j, :], dataY[j, :])).T #updated
             data_k = self._center_points(data_k)
@@ -142,9 +147,13 @@ class Aligner2D:
             aligned_pointsB, rotation_matrix, translation_vector = self._procrustes_align(pointsA, ordered_pointsB)
             self.aligned_points.append(aligned_pointsB)
 
-            for raw_x, raw_y, reg_x, reg_y in zip(
-                dataX[j, :], dataY[j, :], aligned_pointsB[:, 0], aligned_pointsB[:, 1] #updated indexing
-            ):
+            # Correctly reorder the labels based on best_order for the current timepoint j+1
+            current_labels = [self.labels[idx] for idx in best_order] #get corresponding labels
+            # Add aligned points and reordered labels to the DataFrame
+            
+            for k, (raw_x, raw_y, reg_x, reg_y) in enumerate(zip(
+                    dataX[j, :], dataY[j, :], aligned_pointsB[:, 0], aligned_pointsB[:, 1] #updated indexing
+                )):
                 all_registered_data.append(
                     {
                         'raw_x': raw_x,
@@ -152,6 +161,7 @@ class Aligner2D:
                         'registered_x': reg_x,
                         'registered_y': reg_y,
                         'timepoint': time_points[j],  # Use the correct time point label
+                        'label': current_labels[k],  # Correctly ordered labels!
                     }
                 )
 

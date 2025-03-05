@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import string
 from scipy.spatial.distance import cdist
+from scipy.spatial import distance_matrix
 
 class CellSimulator:
     def __init__(self, n_circles=6, width=1000, height=1000, min_radius=35, 
@@ -91,7 +92,7 @@ class CellSimulator:
         self.circles_df['x'] += jx
         self.circles_df['y'] += jy
 
-    def move_individual_cells(self, movement_specs, use_radius_percentage=True):
+    def move_individual_cells(self, movement_specs, mvmnt_type='min', use_nn_percentage=False):
         """Moves specified individual cells.
 
         Args:
@@ -108,16 +109,23 @@ class CellSimulator:
                 print(f"Warning: Cell with label '{label}' not found, skipping.")
                 continue
             
-            if use_radius_percentage:
+            if mvmnt_type == 'radius':
                 radius = self.circles_df.loc[row_index, 'radius']
                 movement_amount = movement_percentage * radius
-            else:
+            elif mvmnt_type == 'nearest':
                 # Calculate movement based on distance to the next cell
                 current_index = self.circles_df.index.get_loc(self.circles_df[self.circles_df.label == label].index[0])
                 next_index = (current_index + 1) % len(self.circles_df)
                 next_cell = self.circles_df.iloc[next_index]
                 distance_to_next = np.sqrt((self.circles_df.loc[row_index, 'x'] - next_cell['x'])**2 + (self.circles_df.loc[row_index, 'y'] - next_cell['y'])**2)
                 movement_amount = movement_percentage * distance_to_next
+            elif mvmnt_type == 'min':
+                # calculate movement as a percentage of the minimum distance between cells at initial
+                path = self.circles_df[['x','y']].to_numpy()
+                distances = distance_matrix(path, path)
+                # Exclude distances to self (diagonal elements)
+                distances[np.diag_indices_from(distances)] = np.inf
+                movement_amount = movement_percentage * np.min(distances)
 
             # Apply random direction
             angle = self.rng.uniform(0, 2 * np.pi) #random direction
@@ -138,7 +146,7 @@ class CellSimulator:
         translations=None, 
         jitters=None,
         individual_movements=None, 
-        use_radius_percentage=True,
+        mvmnt_type='min',
         shuffle_points=True
     ):
         """Simulates cell movement over multiple time points.
@@ -176,7 +184,7 @@ class CellSimulator:
                 self.translate(*translations[i])  # Use self.translate
 
             if individual_movements is not None: #check if this parameter was provided
-                self.move_individual_cells(individual_movements[i], use_radius_percentage=use_radius_percentage)
+                self.move_individual_cells(individual_movements[i], mvmnt_type=mvmnt_type)
 
             if jitters is not None: #apply jitter
                 self.jitter(*jitters[i]) #use the jitter method
@@ -201,8 +209,6 @@ class CellSimulator:
             
         self.simulated_data = simulated_data
         return simulated_data
-
-
 
 ##########
 

@@ -1,8 +1,65 @@
 # align_spheroid/evaluation.py (New module)
 import numpy as np
 from scipy.spatial.distance import cdist, directed_hausdorff
+from scipy.spatial import distance_matrix
 from scipy.optimize import linear_sum_assignment
 from scipy.linalg import orthogonal_procrustes
+
+def alignment_accuracy(simulated_df, registered_df, time_points):
+    """Calculates the alignment accuracy at each time point.
+
+    Args:
+        simulated_df (pd.DataFrame): DataFrame from CellSimulator.
+        registered_df (pd.DataFrame): DataFrame from Aligner2D.
+        time_points (list): List of time point labels.
+
+    Returns:
+        np.ndarray: Array of accuracy fractions for each time point.
+    """
+
+    n_timepoints = len(time_points)
+    accuracies = []
+
+    for i in range(n_timepoints): #modified to work across timepoints.
+        time = time_points[i]
+        # Extract labels from simulated data
+        true_labels = simulated_df[f'label_{time}' if i > 0 else 'label'].tolist()  # Handle "label" at time 0
+        # Map registered labels to their original order
+        registered_at_time = registered_df[registered_df['timepoint'] == time] if i > 0 else registered_df.copy()
+        if i > 0:
+            label_map = dict(zip(registered_df['label'], simulated_df['label']))
+            registered_labels = [label_map[label] for label in registered_at_time['label']]
+        else: #no registered labels at time point 0
+            registered_labels = registered_at_time['label']
+        
+        # Sort both label lists to compare correctly
+        true_labels.sort()
+        registered_labels.sort()
+        # Calculate accuracy for the current time point
+        n_correct = sum(t == r for t, r in zip(true_labels, registered_labels))
+
+        accuracy = n_correct / len(true_labels) if len(true_labels) > 0 else 1.0  # Handle empty time point
+        accuracies.append(accuracy)
+
+    return np.array(accuracies)
+
+def normalize_distance(path, distance):
+    """
+    Calculates a normalized version of a distance metric between two paths. Divides the distance metric by the minimum nearest neighbor distance in the provided path.
+
+    Args:
+        path (np.ndarray): 2D array of points representing the first path (reference path). 
+        distance (np.float): Scalar value indicating the measured distance between two paths.
+
+    Returns:
+        np.float: A scalar value indicating the distance between two paths normalized to the minimum nearest neighbor distance of the initial path.
+    """
+    if len(path) < 2:
+        return float('inf')
+    distances = distance_matrix(path, path)
+    # Exclude distances to self (diagonal elements)
+    distances[np.diag_indices_from(distances)] = np.inf
+    return distance/np.min(distances)
 
 def relative_movement(path1, path2):
     """
@@ -222,3 +279,30 @@ def earth_movers_distance(pointsA, pointsB):
     row_ind, col_ind = linear_sum_assignment(cost_matrix)  # Use Hungarian algorithm
     emd = cost_matrix[row_ind, col_ind].sum() / min(n,m) # normalize by the number of points
     return emd
+
+def distance_matrix_error(points1, points2, metric='euclidean'):
+    """Calculates the mean squared error (MSE) between two distance matrices.
+
+    Args:
+        points1 (np.ndarray): First set of points (2D array).
+        points2 (np.ndarray): Second set of points (2D array).
+        metric (str, optional): Distance metric to use. Defaults to 'euclidean'.
+
+    Returns:
+        float: Mean squared error between the distance matrices.
+              Returns np.inf if either point set is empty or if they have different numbers of points.
+    """
+
+    if points1.size == 0 or points2.size == 0: # if either point set is empty, return np.inf. This behavior can be modified as needed.
+        return np.inf
+
+    if points1.shape[0] != points2.shape[0]:
+        return np.inf  # Handle cases with different numbers of points
+
+
+    dist_matrix1 = cdist(points1, points1, metric=metric)
+    dist_matrix2 = cdist(points2, points2, metric=metric)
+
+    mse = np.mean((dist_matrix1 - dist_matrix2)**2)
+
+    return mse
