@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import itertools
 from scipy.spatial.distance import pdist, cdist
 from scipy.linalg import svd
+from sklearn.cluster import KMeans
 
 class Aligner2D:
     """
@@ -130,6 +131,27 @@ class Aligner2D:
         else: #make generic labels for real data case.
             self.labels = [f'Point_{i}' for i in range(dataX.shape[1])]
 
+        # Store initial labels in registered_df for ALL time points
+        for j in range(n_timepoints):  # Iterate through ALL time points, starting at 0
+            data_j = np.vstack((dataX[j, :], dataY[j, :])).T  # Combine x and y
+            data_j = self._center_points(data_j)
+            if j > 0: #only append if timepoint is after time 0.
+                self.unaligned_points.append(data_j)
+
+            for k, (raw_x, raw_y) in enumerate(zip(dataX[j, :], dataY[j, :])):
+                all_registered_data.append(
+                    {
+                        'raw_x': raw_x,
+                        'raw_y': raw_y,
+                        'registered_x': data_j[k, 0],  # Store centered x, y for time 0
+                        'registered_y': data_j[k, 1],
+                        'timepoint': time_points[j],
+                        'original_label': self.labels[k],  # Store initial label
+                        'aligned_label': self.labels[k]  # Initialize aligned label (same as original at time 0)
+
+                    }
+                )
+        
         for j in range(1, n_timepoints):
             data_k = np.vstack((dataX[j, :], dataY[j, :])).T #updated
             data_k = self._center_points(data_k)
@@ -151,19 +173,20 @@ class Aligner2D:
             current_labels = [self.labels[idx] for idx in best_order] #get corresponding labels
             # Add aligned points and reordered labels to the DataFrame
             
+            # Update registered_df with aligned data and labels for current time point j
+            current_registered = [data for data in all_registered_data if data['timepoint'] == time_points[j]]
             for k, (raw_x, raw_y, reg_x, reg_y) in enumerate(zip(
-                    dataX[j, :], dataY[j, :], aligned_pointsB[:, 0], aligned_pointsB[:, 1] #updated indexing
-                )):
-                all_registered_data.append(
-                    {
-                        'raw_x': raw_x,
-                        'raw_y': raw_y,
-                        'registered_x': reg_x,
-                        'registered_y': reg_y,
-                        'timepoint': time_points[j],  # Use the correct time point label
-                        'label': current_labels[k],  # Correctly ordered labels!
-                    }
-                )
+                dataX[j, :], dataY[j, :], aligned_pointsB[:, 0], aligned_pointsB[:, 1]
+            )):
+
+                current_registered[best_order[k]].update({
+                    'registered_x': reg_x,
+                    'registered_y': reg_y,
+                    'aligned_label': self.labels[k],  # Correctly ordered label
+                })
+
+        # Recreate DataFrame after modifications, since changes are not being made in-place.
+        self.registered_df = pd.DataFrame(all_registered_data)
 
         self.aligned_points_df = pd.concat([pd.DataFrame(arr, columns = ['x', 'y']) for arr in self.aligned_points])
         self.registered_df = pd.DataFrame(all_registered_data)
@@ -318,12 +341,39 @@ class Aligner2D:
         if show_plot:
             plt.show()
 
+    def cluster_labeling(self, seed=0):
+        """
+        Clusters the aligned points in the registered point space to assign labels to the aligned points.
+        """
+        # get the registered dataframe after alignment algorithm is run
+        registered = self.registered_df.copy()
+        aligned_points = registered[['registered_x', 'registered_y']]
 
+        n_clusters = len(registered['original_label'].unique())
 
+        # Apply k-means clustering to ALIGNED points
+        kmeans = KMeans(n_clusters=n_clusters, random_state=seed) 
+        cluster_labels = kmeans.fit_predict(aligned_points) #fit to aligned
+        
+        # Add cluster centers to the Aligner2D object
+        self.cluster_centers_ = kmeans.cluster_centers_
 
+        # make a map that matches cluster labels to the point label at t=0
+        label_tuples = zip(
+            cluster_labels[0:n_clusters],
+            registered['original_label'].values[0:n_clusters]
+        )
+        label_map = {t[0]:t[1] for t in label_tuples}
 
+        # get a column of labels
+        mapped_labels = [label_map[c] for c in cluster_labels]
 
+        # copy the registered data frame and add cluster labels
+        self.cluster_labeled_df = registered
+        self.cluster_labeled_df['cluster_labels'] = mapped_labels
 
+        return self
+        
 
 
 ##########
