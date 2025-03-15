@@ -1,5 +1,6 @@
 # align_spheroid/evaluation.py (New module)
 import numpy as np
+import pandas as pd
 from scipy.spatial.distance import cdist, directed_hausdorff
 from scipy.spatial import distance_matrix
 from scipy.optimize import linear_sum_assignment
@@ -306,3 +307,28 @@ def distance_matrix_error(points1, points2, metric='euclidean'):
     mse = np.mean((dist_matrix1 - dist_matrix2)**2)
 
     return mse
+
+def build_long_true(data, n, timepoints):
+    x_cols = [c for c in data.columns if "x" in c]
+    y_cols = [c for c in data.columns if "y" in c]
+    label_cols = [c for c in data.columns if "label" in c]
+    
+    xvals = data[x_cols].values.T.ravel()
+    yvals = data[y_cols].values.T.ravel()
+    tplabels = data[label_cols].values.T.ravel()
+    tps = [j for subl in [[i]*n for i in timepoints] for j in subl]
+    
+    long_true = pd.DataFrame({
+        'true_label':tplabels,
+        'timepoint':tps,
+        'raw_x':xvals,
+        'raw_y':yvals
+    })
+    return long_true
+
+def calc_accuracy(true_labels, pred_labels):
+    n = len(true_labels)
+    true_preds = true_labels == pred_labels
+    n_true = sum(true_preds)
+    accp = n_true/n *100
+    return accp, true_preds

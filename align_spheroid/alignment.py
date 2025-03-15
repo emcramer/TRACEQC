@@ -48,7 +48,7 @@ class Aligner2D:
         for perm in itertools.permutations(range(N)):
             permuted_pointsB = pointsB[perm, :]
             dist_matrix_b = self._compute_distance_matrix(permuted_pointsB, metric=metric)
-            error = np.linalg.norm(dist_matrix_a - dist_matrix_b)
+            error = np.linalg.norm(dist_matrix_a - dist_matrix_b, 2)
 
             if error < min_error:
                 min_error = error
@@ -80,7 +80,7 @@ class Aligner2D:
             return pointsA, np.eye(2), centroidA - centroidB # return a workable transform if dimensions mismatch for 1 point
 
         # Compute optimal rotation using SVD
-        H = centeredB.conj().T @ centeredA # updated procrustes, no conjugation
+        H = centeredB.conj().T @ centeredA
         U, S, Vt = svd(H)  #
         V = Vt.T.conj()
         R = V @ U.conj().T
@@ -111,9 +111,10 @@ class Aligner2D:
             raise ValueError("dataX and dataY must have the same shape.")
 
         # Determine the number of points and time points from the input data
-        n_timepoints, n_points = dataX.shape
-
-        data_0 = np.vstack((dataX[0, :], dataY[0, :])).T #updated
+        n_timepoints = len(self.time_points)
+        n_points = dataX.shape[0]
+        
+        data_0 = np.vstack((dataX[:, 0], dataY[:, 0])).T 
         data_0 = self._center_points(data_0)
 
         self.aligned_points = [data_0]
@@ -129,16 +130,15 @@ class Aligner2D:
         if labels_0 is not None:  # If labels are provided (simulated data), store them
             self.labels = labels_0 #store initial labels
         else: #make generic labels for real data case.
-            self.labels = [f'Point_{i}' for i in range(dataX.shape[1])]
+            self.labels = [f'Point_{i}' for i in range(dataX.shape[0])]
 
         # Store initial labels in registered_df for ALL time points
         for j in range(n_timepoints):  # Iterate through ALL time points, starting at 0
-            data_j = np.vstack((dataX[j, :], dataY[j, :])).T  # Combine x and y
+            data_j = np.vstack((dataX[:, j], dataY[:, j])).T  # Combine x and y
             data_j = self._center_points(data_j)
             if j > 0: #only append if timepoint is after time 0.
                 self.unaligned_points.append(data_j)
-
-            for k, (raw_x, raw_y) in enumerate(zip(dataX[j, :], dataY[j, :])):
+            for k, (raw_x, raw_y) in enumerate(zip(dataX[:, j], dataY[:, j])):
                 all_registered_data.append(
                     {
                         'raw_x': raw_x,
@@ -153,14 +153,14 @@ class Aligner2D:
                 )
         
         for j in range(1, n_timepoints):
-            data_k = np.vstack((dataX[j, :], dataY[j, :])).T #updated
+            data_k = np.vstack((dataX[:, j], dataY[:, j])).T #updated
             data_k = self._center_points(data_k)
             centered_data_k = self._center_points(data_k)  # Center before permutation
             self.unaligned_points.append(centered_data_k)
-
+            
             pointsA = data_0.astype(np.float64)
             pointsB = data_k.astype(np.float64)
-
+            
             best_order, min_error = self._find_best_permutation(pointsA, pointsB)
             self.best_orders.append(best_order)
             self.errors.append(min_error)
@@ -176,7 +176,7 @@ class Aligner2D:
             # Update registered_df with aligned data and labels for current time point j
             current_registered = [data for data in all_registered_data if data['timepoint'] == time_points[j]]
             for k, (raw_x, raw_y, reg_x, reg_y) in enumerate(zip(
-                dataX[j, :], dataY[j, :], aligned_pointsB[:, 0], aligned_pointsB[:, 1]
+                dataX[:, j], dataY[:, j], aligned_pointsB[:, 0], aligned_pointsB[:, 1]
             )):
 
                 current_registered[best_order[k]].update({
