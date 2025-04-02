@@ -52,18 +52,6 @@ The repository is organized as follows:
     pip install -r requirements.txt
     ```
 
-    *Note:* A `requirements.txt` file should be created listing all dependencies. Here is an example:
-    ```
-    numpy
-    scipy
-    matplotlib
-    scikit-image
-    napari
-    microsam
-    jupyter
-    pytest
-    ```
-
 ## Usage
 
 ### Core Algorithm
@@ -103,9 +91,9 @@ Example:
 jupyter notebook paper/figure-1.ipynb
 ```
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-Citation
+This project is licensed under the MIT License - see the [LICENSE file](https://github.com/emcramer/align_spheroid/blob/main/LICENSE) for details.
 
-If you use this code in your research, please cite the following publication:
+## Citation
 
-[Insert the full citation for the scientific article here once published].
+If you use this code in your research, please use the following citation:
+> Automated Quality Control of Time-Course Imaging from 3D in vitro cultures. Eric Cramer , Tamara Lopez-Vidal , Jeanette Johnson , Vania Wang , Daniel Bergman , Ashani Weeraratna , Richard Burkhart, Elana J Fertig , Jacquelyn W Zimmerman, Laura Heiser, and Young Hwan Chang. _bioRxiv_ (2025)
