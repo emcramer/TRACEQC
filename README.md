@@ -82,9 +82,7 @@ Key Components:
 - align_spheroid/synthetic_data.py: This module provides functions for generating synthetic data to test the algorithm's robustness and accuracy.
 - paper/: This folder contains the Jupyter Notebooks used to generate the figures in the manuscript. These serve as useful demonstrations of how to use the code.
 
-License
-
-[Specify the license under which the code is released (e.g., MIT License)]
+[MIT License](https://github.com/emcramer/align_spheroid/blob/main/LICENSE)
 
 Example:
 ```bash
