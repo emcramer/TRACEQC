@@ -1,10 +1,10 @@
 # Automated Quality Control of Time-Course Imaging from 3D in vitro cultures
 
-This repository contains the code and notebooks associated with the manuscript "[Automated Quality Control of Time-Course Imaging from 3D in vitro cultures]". It provides an algorithm for assessing and correcting technical artifacts in longitudinal imaging of 3D cell cultures, such as tumor spheroids. The algorithm relies only on image metadata, requiring no experimental modifications.
+This repository contains the code and notebooks associated with the manuscript "[_Automated Quality Control of Time-Course Imaging from 3D in vitro cultures_]()". It provides an algorithm for assessing and correcting technical artifacts in longitudinal imaging of 3D cell cultures, such as tumor spheroids. The algorithm relies only on image metadata, requiring no experimental modifications.
 
 ## Repository Structure
 
-The repository is organized as follows:
+This repository is organized as follows:
 ```bash
 .
 ├── README.md # This file
@@ -56,11 +56,11 @@ The repository is organized as follows:
 
 ### Core Algorithm
 
-The core algorithm is implemented in the `align_spheroid` package.  Refer to the function documentation within the python package for details on use.
+The core algorithm is implemented in the `align_spheroid` package.  Refer to the function documentation within the python package for details on use. See the `synthetic-example.ipynb` notebook for an example application of the algorithm to simulated data.
 
-### Jupyter Notebooks
+### Jupyter Notebooks for Paper Figures
 
-The `paper` directory contains Jupyter notebooks that reproduce the figures from the manuscript. To run these notebooks, ensure that you have installed Jupyter and all the dependencies listed in `requirements.txt`.
+The `paper` directory contains Jupyter notebooks with code used to generate the figures from the manuscript. To run these notebooks, ensure that you have installed Jupyter and all the dependencies listed in `requirements.txt`. Figures that describe findings from the biological data will need a local copy of the data set.
 
 Example to create Figure 1:
 
@@ -68,27 +68,22 @@ Example to create Figure 1:
 jupyter notebook paper/figure-1.ipynb
 ```
 
-The synthetic-example.ipynb notebook demonstrates the functionality of the synthetic data generation module.
-Running Tests
+The synthetic-example.ipynb notebook demonstrates the functionality of the algorithm using the synthetic data generation module included in the `align_spheroid` directory.
+
+### Running Tests
 
 The tests directory contains unit tests for the align_spheroid package. To run the tests, use pytest:
 ```bash
 pytest tests
 ```
 
-Key Components:  
+## Key Components:  
 - align_spheroid/alignment.py: This module contains the core alignment algorithm, including the permutation-based optimization strategy and Procrustes analysis.
 - align_spheroid/evaluation.py: This module provides functions for evaluating the performance of the alignment algorithm, such as the normalized Frechét distance.
 - align_spheroid/synthetic_data.py: This module provides functions for generating synthetic data to test the algorithm's robustness and accuracy.
 - paper/: This folder contains the Jupyter Notebooks used to generate the figures in the manuscript. These serve as useful demonstrations of how to use the code.
 
-[MIT License](https://github.com/emcramer/align_spheroid/blob/main/LICENSE)
-
-Example:
-```bash
-jupyter notebook paper/figure-1.ipynb
-```
-
+## License
 This project is licensed under the MIT License - see the [LICENSE file](https://github.com/emcramer/align_spheroid/blob/main/LICENSE) for details.
 
 ## Citation
