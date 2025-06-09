@@ -21,7 +21,8 @@ This repository is organized as follows:
 ├── paper # Jupyter notebooks for generating figures from the paper
 │ ├── figure-1.ipynb # Notebook for creating Figure 1
 │ ├── figure-2.ipynb # Notebook for creating Figure 2
-│ └── figure-3.ipynb # Notebook for creating Figure 3
+│ ├── figure-3.ipynb # Notebook for creating Figure 3
+│ └── tracker-comparison.ipynb # Notebook for creating tracking algorithm benachmarking figures
 ├── tests # Unit tests for the align_spheroid package
 │ ├── test_alignment.py # Tests for alignment functions
 │ ├── test_evaluation.py # Tests for evaluation functions
