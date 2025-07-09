@@ -1,5 +1,9 @@
 # Automated Quality Control of Time-Course Imaging from 3D in vitro cultures
 
+<!-- Begin Badges -->
+[![DOI](https://zenodo.org/badge/943608408.svg)](https://doi.org/10.5281/zenodo.15850545)
+<!-- End Badges -->
+
 This repository contains the code and notebooks associated with the manuscript "[_Automated Quality Control of Time-Course Imaging from 3D in vitro cultures_]()". It provides an algorithm for assessing and correcting technical artifacts in longitudinal imaging of 3D cell cultures, such as tumor spheroids. The algorithm relies only on image metadata, requiring no experimental modifications.
 
 ## Repository Structure
