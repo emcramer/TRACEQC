@@ -1,4 +1,4 @@
-# Automated Quality Control of Time-Course Imaging from 3D in vitro cultures
+# Automated Quality Control of Time-Course Imaging from 3D in vitro cultures with TRACE-QC
 
 <!-- Begin Badges -->
 [![DOI](https://zenodo.org/badge/943608408.svg)](https://doi.org/10.5281/zenodo.15850545)
