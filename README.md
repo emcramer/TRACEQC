@@ -39,7 +39,7 @@ This repository is organized as follows:
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/<your_username>/align_spheroid.git
+    git clone https://github.com/emcramer/align_spheroid.git
     cd align_spheroid
     ```
 
